@@ -12,6 +12,8 @@ repos:
       - id: debug-statements
       - id: detect-private-key
       - id: end-of-file-fixer
+        # Preserve the exact endings of these pinned upstream files.
+        exclude: ^src/eval_aware_bench/(render\.py|data/chat_prompt_realistic\.txt|LICENSE\.upstream)$
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: b7359babf83a050dcd7bf892538f3df09c3d4ba6 # 0.11.29

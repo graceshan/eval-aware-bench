@@ -7,12 +7,14 @@ name = "eval-aware-bench"
 version = "0.1.0"
 description = "An Inspect implementation of EvalAwareBench for measuring evaluation awareness and task completion under different evaluation cues."
 readme = "README.md"
-license = "MIT"
+license = "MIT AND CC-BY-NC-4.0"
+license-files = ["LICENSE", "src/eval_aware_bench/LICENSE.upstream"]
 authors = [{ name = "Grace Shan", email = "graceshan02@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = [
     "inspect_ai>=0.3.262",
     "inspect-evals-utils[huggingface]==0.3.0",
+    "PyYAML>=6",
 ]
 
 [project.urls]
@@ -46,6 +48,7 @@ include = ["eval_aware_bench*"] # examples/ stays out of the wheel
 
 [tool.setuptools.package-data]
 "*" = ["eval.yaml"]
+eval_aware_bench = ["data/*.txt", "data/tasks/*/*.yaml", "LICENSE.upstream", "UPSTREAM.md"]
 
 # Layout preset: multi-eval (tests/<package>/, src/<package>/README.md) or
 # single-eval (flat tests/, README at the root). A hybrid repo keeps a preset and
@@ -76,7 +79,8 @@ line-length = 100
 src = ["src"]
 target-version = "py312"
 # *.md: ruff formats Python blocks in Markdown, and the README generator writes them its own way.
-extend-exclude = ["agent_artefacts", "*.md"]
+# Keep the vendored renderer byte-identical to the pinned upstream revision.
+extend-exclude = ["agent_artefacts", "*.md", "src/eval_aware_bench/render.py"]
 
 [tool.ruff.lint]
 select = [
