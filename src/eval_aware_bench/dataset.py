@@ -4,6 +4,8 @@ from importlib.resources import files
 from typing import TypedDict
 
 import yaml
+from inspect_ai.dataset import Sample
+from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from eval_aware_bench.render import render
 
@@ -58,3 +60,20 @@ def load_records() -> list[PromptRecord]:
                 )
             )
     return records
+
+
+def record_to_sample(record: PromptRecord) -> Sample:
+    return Sample(
+        id=record["id"],
+        input=[
+            ChatMessageSystem(content=record["system_prompt"]),
+            ChatMessageUser(content=record["user_prompt"]),
+        ],
+        metadata={
+            "task_id": record["task_id"],
+            "pair_id": record["pair_id"],
+            "valence": record["valence"],
+            "condition": record["condition"],
+            "factor_config": record["factor_config"],
+        },
+    )

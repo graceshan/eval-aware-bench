@@ -2,8 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
+from inspect_ai.dataset import Sample
 
-from eval_aware_bench.dataset import load_records
+from eval_aware_bench.dataset import PromptRecord, load_records, record_to_sample
 
 
 def test_record_ids_and_factor_settings() -> None:
@@ -43,3 +44,24 @@ def test_messages_match_pinned_upstream(tmp_path: Path, monkeypatch: pytest.Monk
             record["user_prompt"]
             == expected["user_prompts"][record["valence"]][record["condition"]]
         )
+
+
+@pytest.mark.parametrize("record", load_records(), ids=lambda record: record["id"])
+def test_record_to_sample(record: PromptRecord) -> None:
+    sample = record_to_sample(record)
+
+    assert isinstance(sample, Sample)
+    assert sample.id == record["id"]
+    assert isinstance(sample.input, list)
+    assert [(message.role, message.content) for message in sample.input] == [
+        ("system", record["system_prompt"]),
+        ("user", record["user_prompt"]),
+    ]
+    assert sample.metadata == {
+        "task_id": record["task_id"],
+        "pair_id": record["pair_id"],
+        "valence": record["valence"],
+        "condition": record["condition"],
+        "factor_config": record["factor_config"],
+    }
+    assert sample.target == ""
