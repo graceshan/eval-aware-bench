@@ -1,0 +1,10 @@
+title: "eval-aware-bench"
+description: |
+  An Inspect implementation of EvalAwareBench for measuring evaluation awareness and task completion under different evaluation cues.
+group: Knowledge # pick the group used by the inspect_evals listing for this benchmark
+contributors:
+  - graceshan
+version: "1-A"
+tasks:
+  - name: eval_aware_bench
+    dataset_samples: 2
