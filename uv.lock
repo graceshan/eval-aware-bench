@@ -625,6 +625,7 @@ source = { editable = "." }
 dependencies = [
     { name = "inspect-ai" },
     { name = "inspect-evals-utils", extra = ["huggingface"] },
+    { name = "pydantic" },
     { name = "pyyaml" },
 ]
 
@@ -649,6 +650,7 @@ dev = [
 requires-dist = [
     { name = "inspect-ai", specifier = ">=0.3.262" },
     { name = "inspect-evals-utils", extras = ["huggingface"], specifier = "==0.3.0" },
+    { name = "pydantic", specifier = ">=2" },
     { name = "pyyaml", specifier = ">=6" },
 ]
 
