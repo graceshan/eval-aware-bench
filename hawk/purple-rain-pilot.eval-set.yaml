@@ -1,0 +1,55 @@
+name: purple-rain-pilot
+tasks:
+  - package: git+https://github.com/graceshan/eval-aware-bench@c1f03b1aff9058fdf2edd20baefab7968116b2e6
+    name: eval_aware_bench
+    items:
+      - name: eval_aware_bench
+        args:
+          pair_ids: [lyrics_purple_rain]
+          valences: [capability, safety]
+          conditions: [baseline, F8]
+
+# Middleman authorizes the full catalog name. Inspect uses the OpenAI adapter.
+models:
+  - package: openai
+    name: openai
+    items:
+      - name: openrouter/openai/gpt-oss-120b
+        args:
+          responses_api: false
+          streaming: false
+          max_retries: 0  # SDK retries; Inspect handles request retries below.
+          config:
+            temperature: 0.3
+            max_tokens: 4096
+            # The OpenAI adapter drops reasoning_effort for GPT-OSS.
+            # Send the same OpenRouter reasoning field as the local pilot.
+            extra_body:
+              reasoning:
+                effort: high
+
+model_roles:
+  grader:
+    # On GPT-5 this adapter sends the unchanged rubric as a developer message.
+    package: openai
+    name: openai
+    items:
+      - name: openrouter/openai/gpt-5
+        args:
+          responses_api: false
+          streaming: false
+          max_retries: 0
+          config:
+            max_retries: 1
+
+epochs: 1
+max_samples: 1
+retry_attempts: 0  # No whole-task retries.
+max_retries: 1
+cache: false
+score_on_error: false
+log_model_api: true
+# Hawk supplies fail_on_error, continue_on_fail, retry_on_error and log_samples.
+runner:
+  environment:
+    INSPECT_HTTP_CONNECT_RETRIES: "0"
