@@ -1,6 +1,6 @@
 # eval-aware-bench
 
-The registered Inspect task runs the four-sample EvalAwareBench pilot. It presents the safety and capability versions of the Purple Rain task at baseline and with the F8 cue. Each epoch makes four target generations and four separate judge calls. [Dataset, scoring, and log analysis](src/eval_aware_bench/README.md)
+The registered Inspect task defaults to the four-sample Purple Rain pilot. The full single-cue dataset contains 1,800 samples from all 200 pinned task YAMLs. [Pilot and full-dataset selections](src/eval_aware_bench/README.md#dataset)
 
 ## Getting started
 

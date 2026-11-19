@@ -118,7 +118,7 @@ def test_registered_pilot(tmp_path: Path, invalid_first: bool) -> None:
     cases = pilot_cases(invalid_first)
     saved = run_pilot(tmp_path, (cases[r["valence"], r["condition"]] for r in records))
     assert saved.eval.task_registry_name == REGISTERED_TASK
-    assert saved.eval.task_version == "2-A"
+    assert saved.eval.task_version == "2-B"
     assert saved.eval.config.epochs == 1
     assert [step.solver for step in saved.plan.steps] == ["generate"]
     assert saved.samples is not None

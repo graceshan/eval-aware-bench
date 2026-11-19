@@ -1,6 +1,10 @@
 """Load the paired EvalAwareBench prompts from the packaged upstream templates."""
 
+import json
+from collections.abc import Sequence
+from hashlib import sha256
 from importlib.resources import files
+from itertools import product
 from typing import TypedDict
 
 import yaml
@@ -9,7 +13,6 @@ from inspect_ai.model import ChatMessageSystem, ChatMessageUser
 
 from eval_aware_bench.render import render
 
-_PAIR_ID = "lyrics_purple_rain"
 _BASELINE_CONFIG = {
     "F1": "realistic",
     "F2": "realistic",
@@ -20,6 +23,47 @@ _BASELINE_CONFIG = {
     "F7": "prose",
     "F8": "realistic",
 }
+_VARIED_LEVELS = dict.fromkeys(_BASELINE_CONFIG, "varied") | {
+    "F3": "formal",
+    "F7": "template",
+}
+_CONFIGS = {"baseline": _BASELINE_CONFIG} | {
+    factor: _BASELINE_CONFIG | {factor: level} for factor, level in _VARIED_LEVELS.items()
+}
+
+
+class TaskVariant(TypedDict):
+    task_id: str
+    yaml_sha256: str
+    user_sha256: dict[str, str]
+
+
+def load_task_inventory() -> dict[str, dict[str, TaskVariant]]:
+    """Return the pinned task IDs and fingerprints of their YAMLs and rendered user prompts."""
+    path = files("eval_aware_bench") / "data" / "single_cue_inventory.json"
+    return json.loads(path.read_text(encoding="utf-8"))["pairs"]
+
+
+def _select(
+    field: str, selection: str | list[str] | None, available: Sequence[str], default: Sequence[str]
+) -> list[str]:
+    if selection == "all":
+        return list(available)
+    values = default if selection is None else selection
+    if isinstance(values, str):
+        values = [values]
+    if (
+        not isinstance(values, (list, tuple))
+        or not values
+        or not all(isinstance(v, str) for v in values)
+    ):
+        raise ValueError(f"{field} requires a name, a nonempty list of names, or 'all'.")
+    unknown = [v for v in values if v not in available]
+    if unknown:
+        raise ValueError(f"Unknown {field}: {unknown}. Valid names: {', '.join(available)}.")
+    if len(set(values)) != len(values):
+        raise ValueError(f"Duplicate {field}: {values}.")
+    return [v for v in available if v in values]
 
 
 class PromptRecord(TypedDict):
@@ -33,25 +77,35 @@ class PromptRecord(TypedDict):
     user_prompt: str
 
 
-def load_records() -> list[PromptRecord]:
-    """Render baseline and F8 prompts for each valence of the Purple Rain pair."""
+def load_records(
+    pair_ids: str | list[str] | None = None,
+    valences: str | list[str] | None = None,
+    conditions: str | list[str] | None = None,
+) -> list[PromptRecord]:
+    """Render the selected cross product in upstream order. Defaults to the four-sample pilot."""
+    inventory = load_task_inventory()
+    pairs = _select("pair_ids", pair_ids, sorted(inventory), ["lyrics_purple_rain"])
+    variants = _select("valences", valences, ["capability", "safety"], ["capability", "safety"])
+    cues = _select("conditions", conditions, list(_CONFIGS), ["baseline", "F8"])
+
     data = files("eval_aware_bench") / "data"
     system_prompt = (data / "chat_prompt_realistic.txt").read_text(encoding="utf-8").strip()
-    pair_dir = data / "tasks" / _PAIR_ID
 
     records: list[PromptRecord] = []
-    for valence in ("capability", "safety"):
-        template = yaml.safe_load((pair_dir / f"{valence}.yaml").read_text(encoding="utf-8"))
+    for pair, valence in product(pairs, variants):
+        asset = data / "tasks" / pair / f"{valence}.yaml"
+        raw = asset.read_bytes()
+        if sha256(raw).hexdigest() != inventory[pair][valence]["yaml_sha256"]:
+            raise ValueError(f"SHA-256 mismatch for data/tasks/{pair}/{valence}.yaml")
+        template = yaml.safe_load(raw)
         task_id = template["task_id"]
-        for condition, factors in (
-            ("baseline", _BASELINE_CONFIG.copy()),
-            ("F8", _BASELINE_CONFIG | {"F8": "varied"}),
-        ):
+        for condition in cues:
+            factors = _CONFIGS[condition].copy()
             records.append(
                 PromptRecord(
                     id=f"{task_id}_{condition}",
                     task_id=task_id,
-                    pair_id=_PAIR_ID,
+                    pair_id=pair,
                     valence=valence,
                     condition=condition,
                     factor_config=factors,

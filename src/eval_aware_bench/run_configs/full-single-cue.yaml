@@ -1,0 +1,8 @@
+task:
+  task: eval_aware_bench/eval_aware_bench
+  args:
+    pair_ids: all
+    valences: all
+    conditions: all
+eval_config:
+  epochs: 3

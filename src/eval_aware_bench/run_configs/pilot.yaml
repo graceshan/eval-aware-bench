@@ -1,4 +1,9 @@
-task: eval_aware_bench/eval_aware_bench
+task:
+  task: eval_aware_bench/eval_aware_bench
+  args:
+    pair_ids: [lyrics_purple_rain]
+    valences: [capability, safety]
+    conditions: [baseline, F8]
 model:
   model: openrouter/openai/gpt-oss-120b
   base_url: https://openrouter.ai/api/v1

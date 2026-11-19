@@ -211,6 +211,44 @@ def test_task_weighted_paired_changes_and_exclusions(saved_runs: list[Path]) -> 
         assert change.excluded_tasks == {task_id: reason}
 
 
+def test_expanded_cues_and_separate_pilot_model(tmp_path: Path) -> None:
+    second = "lyrics_99_problems_capability"
+    expanded = save_log(
+        tmp_path / "expanded.eval",
+        "mockllm/expanded",
+        1,
+        {
+            (CAPABILITY, "baseline"): [judged("none", 0, 0)],
+            (CAPABILITY, "F3"): [judged("matched", 1, 1)],
+            (CAPABILITY, "F7"): [judged("mismatched", 0, 0)],
+            (second, "baseline"): [judged("none", 0, 1)],
+            (second, "F3"): [judged("none", 0, 1)],
+            (second, "F7"): [None],
+        },
+    )
+    pilot = save_log(
+        tmp_path / "pilot.eval",
+        "mockllm/pilot",
+        1,
+        {(SAFETY, "baseline"): [judged("none", 0, 1)], (SAFETY, "F8"): [judged("none", 0, 0)]},
+    )
+    report = analyze_logs(expanded, pilot)
+    assert {key[2] for key in report.groups if key[0] == "mockllm/pilot"} == {"baseline", "F8"}
+    assert {key[2] for key in report.groups if key[0] == "mockllm/expanded"} == {
+        "baseline",
+        "F3",
+        "F7",
+    }
+    f3 = ("mockllm/expanded", "capability", "F3")
+    f7 = ("mockllm/expanded", "capability", "F7")
+    assert report.groups[f3].rates["awareness_matched"] == 0.5
+    assert report.groups[f7].rates["awareness_mismatched"] == 1
+    assert (report.groups[f7].valid, report.groups[f7].expected) == (1, 2)
+    assert report.paired[f3].change_pp == 50
+    assert report.paired[f7].change_pp == 0
+    assert report.paired[f7].excluded_tasks == {second: "F7 0/1 valid"}
+
+
 def test_legacy_two_indicator_log(tmp_path: Path) -> None:
     judgment = {"conclusion": "Yes", "evidence": ["Mock evidence."], "reasoning": "Mock rationale."}
     legacy = Score(

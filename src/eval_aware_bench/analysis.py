@@ -11,7 +11,7 @@ from typing import Literal, NamedTuple
 from inspect_ai.log import EvalLog, EvalSample, read_eval_log
 from inspect_ai.scorer import Score
 
-from eval_aware_bench.dataset import PromptRecord, load_records
+from eval_aware_bench.dataset import PromptRecord, load_task_inventory
 from eval_aware_bench.generation import extract_response_text
 from eval_aware_bench.judge import JudgeVerdict
 from eval_aware_bench.scorers import METRIC_NAMES, verdict_values
@@ -175,14 +175,25 @@ def analyze_logs(
     """Analyze saved runs by (target model, valence, condition), using every scheduled epoch.
 
     Optional records identify scheduled samples with no surviving metadata and declare
-    the conditions to compare. Defaults to the packaged pilot. Independent runs pool
+    the conditions to compare. Otherwise use the pinned inventory for identity and
+    the scheduled samples for each model's conditions. Independent runs pool
     their repeats. Supply one copy of each run, including only the chosen retry.
     """
-    reference = load_records() if records is None else records
-    known: dict[str | int, _TaskCondition] = {
-        r["id"]: _TaskCondition(r["task_id"], r["valence"], r["condition"]) for r in reference
-    }
-    conditions = {"baseline", *(r.condition for r in known.values())}
+    known: dict[str | int, _TaskCondition]
+    if records is None:
+        known = {
+            f"{row['task_id']}_{condition}": _TaskCondition(row["task_id"], valence, condition)
+            for variants in load_task_inventory().values()
+            for valence, row in variants.items()
+            for condition in row["user_sha256"]
+        }
+        declared = {"baseline"}
+    else:
+        known = {
+            r["id"]: _TaskCondition(r["task_id"], r["valence"], r["condition"]) for r in records
+        }
+        declared = {"baseline", *(r.condition for r in known.values())}
+    conditions: dict[str, set[str]] = defaultdict(set)
     cells: dict[GroupKey, dict[str, list[_Epoch]]] = defaultdict(lambda: defaultdict(list))
     tasks: dict[tuple[str, str], set[str]] = defaultdict(set)
     report = AnalysisReport(groups={}, paired={}, failed_epochs={})
@@ -196,16 +207,19 @@ def analyze_logs(
             raise ValueError(f"Duplicate evaluation log: {path}")
         seen_logs.add(log_id)
         model = log.eval.model
+        if records is None and log.eval.task_version == "2-A":
+            # Legacy pilot logs advertised baseline/F8 even when only one cell was run.
+            conditions[model].add("F8")
         for sample_id, epoch, (task_id, valence, condition), row in _log_epochs(log, known):
             cells[model, valence, condition][task_id].append(row)
             tasks[model, valence].add(task_id)
-            conditions.add(condition)
+            conditions[model].add(condition)
             if row.status != "valid":
                 report.failed_epochs[str(path), sample_id, epoch] = row.status
 
     for (model, valence), task_ids in sorted(tasks.items()):
         baseline = cells[model, valence, "baseline"]
-        for condition in sorted(conditions):
+        for condition in sorted(declared | conditions[model]):
             key = (model, valence, condition)
             cell = cells[key]
             report.groups[key] = _group_rates([row for rows in cell.values() for row in rows])

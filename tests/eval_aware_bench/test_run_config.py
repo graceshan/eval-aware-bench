@@ -7,45 +7,72 @@ from unittest.mock import patch
 
 import pytest
 from inspect_ai import eval
-from inspect_ai.log import read_eval_log
+from inspect_ai.log import EvalLog, read_eval_log
 
 
-@pytest.mark.parametrize(
-    ("options", "target", "epochs"),
-    [
-        ([], "openrouter/openai/gpt-oss-120b", 1),
-        (
-            ["--model", "openrouter/openai/gpt-oss-20b", "--epochs", "3"],
-            "openrouter/openai/gpt-oss-20b",
-            3,
-        ),
-    ],
-    ids=["pilot", "cli-overrides"],
-)
-def test_pilot_run_config(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, options: list[str], target: str, epochs: int
-) -> None:
+def load_config_header(
+    name: str, options: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> EvalLog:
     monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
     monkeypatch.setenv("INSPECT_DISABLE_MODEL_API", "1")
-    config = files("eval_aware_bench") / "run_configs" / "pilot.yaml"
+    config = files("eval_aware_bench") / "run_configs" / name
     with as_file(config) as path:
         args = ["inspect", "eval", "--run-config", str(path), "--log-dir", str(tmp_path)]
         monkeypatch.setattr(sys, "argv", [*args, "--display", "none", *options])
-        # Let the real CLI resolve the task, both models, and the plan into an Inspect log.
+        # Resolve the registered task, models and plan without running any samples.
         with (
             patch("inspect_ai._cli.eval.eval", partial(eval, run_samples=False)),
             pytest.raises(SystemExit) as exit_info,
         ):
             run_module("inspect_ai", run_name="__main__")
     assert exit_info.value.code == 0
-
     [log_path] = tmp_path.glob("*.eval")
-    log = read_eval_log(log_path, header_only=True)
+    return read_eval_log(log_path, header_only=True)
+
+
+@pytest.mark.parametrize(
+    ("options", "target", "epochs", "conditions"),
+    [
+        ([], "openrouter/openai/gpt-oss-120b", 1, ["baseline", "F8"]),
+        (
+            [
+                "--model",
+                "openrouter/openai/gpt-oss-20b",
+                "--epochs",
+                "3",
+                "-T",
+                "conditions=[baseline,F3,F7]",
+            ],
+            "openrouter/openai/gpt-oss-20b",
+            3,
+            ["baseline", "F3", "F7"],
+        ),
+    ],
+    ids=["pilot", "cli-overrides"],
+)
+def test_pilot_run_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    options: list[str],
+    target: str,
+    epochs: int,
+    conditions: list[str],
+) -> None:
+    log = load_config_header("pilot.yaml", options, tmp_path, monkeypatch)
     assert log.eval.task == "eval_aware_bench/eval_aware_bench"
+    assert log.eval.task_args == {
+        "pair_ids": ["lyrics_purple_rain"],
+        "valences": ["capability", "safety"],
+        "conditions": conditions,
+    }
     assert log.eval.config.epochs == epochs
     assert log.eval.config.sample_id is None
     assert log.eval.config.limit is None
-    assert log.eval.dataset.samples == 4
+    assert log.eval.dataset.sample_ids == [
+        f"lyrics_purple_rain_{valence}_{condition}"
+        for valence in ("capability", "safety")
+        for condition in conditions
+    ]
 
     transport = {"stream": False, "responses_api": False, "max_retries": 0}
     assert log.eval.model == target
@@ -63,3 +90,17 @@ def test_pilot_run_config(
     assert grader.args == transport
     assert grader.base_url == log.eval.model_base_url == "https://openrouter.ai/api/v1"
     assert grader.config.model_dump(exclude_none=True) == {"max_retries": 1}
+
+
+def test_full_single_cue_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = load_config_header(
+        "full-single-cue.yaml", ["--model", "mockllm/model"], tmp_path, monkeypatch
+    )
+    assert log.eval.task == "eval_aware_bench/eval_aware_bench"
+    assert log.eval.task_args == dict.fromkeys(("pair_ids", "valences", "conditions"), "all")
+    assert log.eval.config.epochs == 3
+    assert log.eval.config.limit is None
+    assert log.eval.config.sample_id is None
+    assert log.eval.dataset.sample_ids is not None
+    assert len(log.eval.dataset.sample_ids) == 1800
+    assert len(set(log.eval.dataset.sample_ids)) == 1800

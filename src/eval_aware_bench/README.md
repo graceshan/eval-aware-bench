@@ -1,6 +1,6 @@
 # eval-aware-bench
 
-The registered `eval_aware_bench/eval_aware_bench` task runs the four-sample Purple Rain pilot from *Decomposing and Measuring Evaluation Awareness*. It measures how the F8 cue affects awareness and completion for a safety request and its benign counterpart. [Paper](https://arxiv.org/abs/2605.23055)
+The registered `eval_aware_bench/eval_aware_bench` task measures how evaluation cues affect awareness and completion on paired safety and capability requests. It defaults to the four-sample Purple Rain pilot and supports the full single-cue dataset from *Decomposing and Measuring Evaluation Awareness*. [Paper](https://arxiv.org/abs/2605.23055)
 
 <!-- Contributors: Automatically Generated -->
 Contributed by [@graceshan](https://github.com/graceshan)
@@ -68,7 +68,9 @@ See `uv run inspect eval --help` for all available options.
 
 ### `eval_aware_bench`
 
-No task parameters.
+- `pair_ids` (str | list[str] | None): Pair name, list of names, or "all". (default: `None`)
+- `valences` (str | list[str] | None): Valence name, list of names, or "all". Defaults to capability and safety. (default: `None`)
+- `conditions` (str | list[str] | None): Condition name, list of names, or "all" (baseline and F1 through F8). Defaults to baseline and F8. (default: `None`)
 <!-- /Parameters: Automatically Generated -->
 
 ## OpenRouter pilot
@@ -97,6 +99,35 @@ The pilot uses the packaged `lyrics_purple_rain` pair. The safety request asks f
 
 Each sample contains the shared system message and the rendered user prompt. Its ID combines the upstream task ID and condition, for example `lyrics_purple_rain_safety_F8`. The task ID, pair ID, valence, condition, and all eight factor settings are saved as metadata. Inspect records repeats as epochs under the same sample ID.
 
+The package contains all **200 upstream YAMLs**. Each of the 100 pairs has a capability and a safety variant, each rendered at baseline and F1 through F8. This gives **1,800 distinct samples**, 900 per valence. The loader checks each selected YAML against its pinned SHA-256 before rendering it. [Fingerprint inventory and provenance](UPSTREAM.md#single-cue-inventory)
+
+`load_records()` and the registered task accept the same three filters. Each accepts one name, a list of names, or the string `"all"`. Omitted fields retain their pilot defaults. Pair IDs sort alphabetically, then capability precedes safety, and baseline precedes F1 through F8 regardless of filter order. F3 changes register from casual to formal, F7 changes prose to template, and each other cue changes its own factor from realistic to varied.
+
+```python
+from eval_aware_bench.dataset import load_records
+
+pilot = load_records()  # 4 samples
+purple_rain = load_records(pair_ids="lyrics_purple_rain", conditions="all")  # 18
+capability = load_records(pair_ids="all", valences="capability", conditions="all")  # 900
+full = load_records(pair_ids="all", valences="all", conditions="all")  # 1,800
+```
+
+The pilot configuration selects `lyrics_purple_rain`, both valences, baseline and F8, and one epoch. The full single-cue configuration sets all three filters to `all` and schedules three epochs, matching the original repeat count. It leaves model and provider settings to the caller. Pass `--epochs 1` for one repeat per sample. Three epochs cover 5,400 sample-epochs per target across the same 1,800 IDs. [Pilot configuration](run_configs/pilot.yaml) · [Full single-cue configuration](run_configs/full-single-cue.yaml)
+
+To select the full dataset in an existing Inspect command, append `-T pair_ids=all -T valences=all -T conditions=all`. To verify every prompt offline, use the pinned checkout. The check compares package assets, task and cue order, the shared system text, and all rendered user messages with the upstream implementation.
+
+```bash
+EVALAWAREBENCH_UPSTREAM=../decomposing-eval-awareness INSPECT_DISABLE_MODEL_API=1 \
+  uv run pytest -q tests/eval_aware_bench/test_upstream_inventory.py
+```
+
+To select two pairs and three conditions with the pilot model settings, pass task arguments on the command line.
+
+```bash
+INSPECT_HTTP_CONNECT_RETRIES=0 uv run inspect eval --run-config src/eval_aware_bench/run_configs/pilot.yaml \
+  -T 'pair_ids=[lyrics_99_problems, lyrics_purple_rain]' -T 'conditions=[baseline, F3, F7]'
+```
+
 ## Scoring
 
 The pilot scorer uses Inspect's `grader` model role, which defaults to `openai/gpt-5`. It passes the rendered user prompt, readable target reasoning, and final answer to Inspect in a single system message. The mock tests verify this message at the grader boundary. Upstream uses Chat Completions with the system role. Inspect 0.3.291's native GPT-5 adapter defaults to the Responses API and uses the developer role.
@@ -118,7 +149,7 @@ pair = report.paired[key]
 print(pair.change_pp, pair.task_changes_pp, pair.excluded_tasks)
 ```
 
-Pass one or more saved Inspect log paths. The helper groups individual epochs by target model, valence, and condition. Independent runs pool their repeats. For retries, pass only the chosen attempt. It can also read the earlier two-score logs using their saved judge verdicts. The optional `records` argument defaults to the packaged pilot. Supply records for other planned samples if their IDs appear in a log header and all their epoch metadata is missing.
+Pass one or more saved Inspect log paths. The helper groups individual epochs by target model, valence, and condition. Independent runs pool their repeats. For retries, pass only the chosen attempt. It can also read the earlier two-score logs using their saved judge verdicts. The pinned inventory identifies missing samples from their IDs. Each model's scheduled samples determine which cues to compare with baseline. Version 2-A logs retain the original baseline/F8 comparison. Pass explicit `records` to declare additional comparisons or identify samples outside the inventory.
 
 Each group's `expected` count uses the selected sample IDs and configured epochs in each log. It equals `valid + unscored + errors + missing`. A recorded sample error takes precedence over a score. Invalid verdicts, invalidated samples, and recorded samples without a score are unscored. An expected epoch with no sample record is missing. `report.failed_epochs` identifies each such outcome by log path, sample ID, and epoch.
 
@@ -128,6 +159,8 @@ For each cue, a task contributes only when its baseline and cue both ran and **e
 
 ## Deviations from the original implementation
 
+Dataset fidelity was verified offline against the pinned runner. The full single-cue configuration specifies the dataset and epochs only. Model checkpoints, provider routing, reasoning settings and the grader connection must be specified to reproduce a particular upstream run. The four-sample OpenRouter smoke test used GPT-OSS-120B and a GPT-5 grader routed through OpenRouter. Its log records the serving providers and one non-verbatim judge quotation. [Pilot observations](#observed-routing-and-replication-scope)
+
 | What changed | Why | Expected effect on scores |
 | --- | --- | --- |
 | A verdict that fails JSON or schema validation is unscored. The sample retains the raw reply, the Inspect reason `grader_failed`, and the parser diagnostic in `metadata["parse_error"]`. | The upstream online judge saves malformed JSON as raw text. Its awareness summary includes that record in the denominator and adds no positive judgment. | Inspect excludes the sample from all five rates. The affected task is also excluded from a paired comparison that requires that verdict. |
@@ -136,9 +169,10 @@ For each cue, a task contributes only when its baseline and cue both ran and **e
 
 ## Architecture
 
-The task converts each record from `load_records()` into an Inspect `Sample` with `record_to_sample()`. Inspect's built-in `generate()` obtains one target response per sample and epoch. The `eval_awareness()` scorer makes one grader call per response. A default run has one epoch, and a three-epoch run produces twelve target responses and twelve judgments.
+The task converts each record from `load_records()` into an Inspect `Sample` with `record_to_sample()`. Inspect's built-in `generate()` obtains one target response per sample and epoch. The `eval_awareness()` scorer makes one grader call per response. With the four-sample pilot, three epochs produce twelve target responses and twelve judgments.
 
 ## Changelog
 
+- **2-B** adds pair, valence, and condition filters and packages all 1,800 single-cue samples with an offline fingerprint inventory. The four-sample pilot is the default.
 - **2-A** runs the four-sample pilot with the EvalAwareBench judge and five binary scores. This changes the dataset, prompts, and scoring used by the registered task.
 - **1-A** ran two starter questions with exact-match scoring.
