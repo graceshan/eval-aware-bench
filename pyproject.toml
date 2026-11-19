@@ -49,7 +49,7 @@ include = ["eval_aware_bench*"] # examples/ stays out of the wheel
 
 [tool.setuptools.package-data]
 "*" = ["eval.yaml"]
-eval_aware_bench = ["data/*.txt", "data/tasks/*/*.yaml", "LICENSE.upstream", "UPSTREAM.md"]
+eval_aware_bench = ["data/*.txt", "data/tasks/*/*.yaml", "run_configs/*.yaml", "LICENSE.upstream", "UPSTREAM.md"]
 
 # Layout preset: multi-eval (tests/<package>/, src/<package>/README.md) or
 # single-eval (flat tests/, README at the root). A hybrid repo keeps a preset and

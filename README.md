@@ -10,10 +10,10 @@ uv run pre-commit install
 INSPECT_DISABLE_MODEL_API=1 uv run pytest tests/eval_aware_bench/test_eval_aware_bench.py
 ```
 
-The test runs `eval_aware_bench/eval_aware_bench` with scripted target and grader replies, then reads the saved logs. For a provider-backed run, select the target with `--model` and the grader with `--model-role`. The grader defaults to `openai/gpt-5`. Provide credentials for both selected models.
+The test runs `eval_aware_bench/eval_aware_bench` with scripted target and grader replies, then reads the saved logs. To run the four-sample pilot through OpenRouter, set `OPENROUTER_API_KEY` in the project-root `.env` file or your environment. The pilot uses GPT-OSS-120B as the target and GPT-5 as the grader. [Pilot settings, overrides, and audit](src/eval_aware_bench/README.md#openrouter-pilot)
 
 ```bash
-uv run inspect eval eval_aware_bench/eval_aware_bench --model anthropic/claude-sonnet-5-5 --model-role grader=openai/gpt-5
+INSPECT_HTTP_CONNECT_RETRIES=0 uv run inspect eval --run-config src/eval_aware_bench/run_configs/pilot.yaml
 uv run inspect view
 ```
 

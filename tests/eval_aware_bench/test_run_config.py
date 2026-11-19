@@ -1,0 +1,65 @@
+import sys
+from functools import partial
+from importlib.resources import as_file, files
+from pathlib import Path
+from runpy import run_module
+from unittest.mock import patch
+
+import pytest
+from inspect_ai import eval
+from inspect_ai.log import read_eval_log
+
+
+@pytest.mark.parametrize(
+    ("options", "target", "epochs"),
+    [
+        ([], "openrouter/openai/gpt-oss-120b", 1),
+        (
+            ["--model", "openrouter/openai/gpt-oss-20b", "--epochs", "3"],
+            "openrouter/openai/gpt-oss-20b",
+            3,
+        ),
+    ],
+    ids=["pilot", "cli-overrides"],
+)
+def test_pilot_run_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, options: list[str], target: str, epochs: int
+) -> None:
+    monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
+    monkeypatch.setenv("INSPECT_DISABLE_MODEL_API", "1")
+    config = files("eval_aware_bench") / "run_configs" / "pilot.yaml"
+    with as_file(config) as path:
+        args = ["inspect", "eval", "--run-config", str(path), "--log-dir", str(tmp_path)]
+        monkeypatch.setattr(sys, "argv", [*args, "--display", "none", *options])
+        # Let the real CLI resolve the task, both models, and the plan into an Inspect log.
+        with (
+            patch("inspect_ai._cli.eval.eval", partial(eval, run_samples=False)),
+            pytest.raises(SystemExit) as exit_info,
+        ):
+            run_module("inspect_ai", run_name="__main__")
+    assert exit_info.value.code == 0
+
+    [log_path] = tmp_path.glob("*.eval")
+    log = read_eval_log(log_path, header_only=True)
+    assert log.eval.task == "eval_aware_bench/eval_aware_bench"
+    assert log.eval.config.epochs == epochs
+    assert log.eval.config.sample_id is None
+    assert log.eval.config.limit is None
+    assert log.eval.dataset.samples == 4
+
+    transport = {"stream": False, "responses_api": False, "max_retries": 0}
+    assert log.eval.model == target
+    assert log.eval.model_args == transport
+    assert log.plan.config.temperature == 0.3
+    assert log.plan.config.max_tokens == 4096
+    assert log.plan.config.reasoning_effort == "high"
+    assert log.plan.config.max_retries == 1
+    assert log.plan.config.cache is False
+
+    assert log.eval.model_roles is not None
+    grader = log.eval.model_roles["grader"]
+    assert not isinstance(grader, list)
+    assert grader.model == "openrouter/openai/gpt-5"
+    assert grader.args == transport
+    assert grader.base_url == log.eval.model_base_url == "https://openrouter.ai/api/v1"
+    assert grader.config.model_dump(exclude_none=True) == {"max_retries": 1}
