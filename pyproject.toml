@@ -59,7 +59,6 @@ preset = "multi-eval"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
 addopts = "-rA --durations=10 --color=yes"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

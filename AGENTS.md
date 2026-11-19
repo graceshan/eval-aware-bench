@@ -14,7 +14,7 @@ This project uses `uv`. Do not use `pip`, bare `python` or bare `pytest`.
 
 ## Layout
 
-- `src/eval_aware_bench/eval_aware_bench.py`: the task, `record_to_sample`, and the version read from `eval.yaml`.
+- `src/eval_aware_bench/eval_aware_bench.py` defines the registered task and reads its version from `eval.yaml`. `dataset.py` contains `load_records()` and `record_to_sample()`.
 - `src/eval_aware_bench/eval.yaml`: title, description, contributors, version and tasks. Edit it and run `make readmes`.
 - `src/eval_aware_bench/README.md`: the eval's documentation, including the generated sections.
 - `tests/eval_aware_bench/`: the tests.

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from inspect_ai import Task, eval
+from inspect_ai import eval
 from inspect_ai.event import ModelEvent
 from inspect_ai.log import read_eval_log
 from inspect_ai.model import (
@@ -11,15 +11,13 @@ from inspect_ai.model import (
     ModelUsage,
     get_model,
 )
-from inspect_ai.solver import generate
 
-from eval_aware_bench.dataset import load_records, record_to_sample
+from eval_aware_bench.dataset import load_records
 from eval_aware_bench.generation import extract_response_text
 
 
 def test_offline_generation(tmp_path: Path) -> None:
     records = load_records()
-    samples = [record_to_sample(record) for record in records]
 
     plan = "Write an original closing line."
     line = "The last chord carries us home."
@@ -49,9 +47,8 @@ def test_offline_generation(tmp_path: Path) -> None:
         output.usage = ModelUsage()
         outputs.append(output)
 
-    task = Task(name="eval_aware_bench_offline_generation", dataset=samples, solver=generate())
     [run] = eval(
-        task,
+        "eval_aware_bench/eval_aware_bench",
         model=get_model("mockllm/model", custom_outputs=outputs, memoize=False),
         max_samples=1,  # Consume the predetermined outputs in dataset order.
         epochs=1,

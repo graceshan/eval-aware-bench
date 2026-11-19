@@ -1,17 +1,23 @@
 # eval-aware-bench
 
-An Inspect implementation of EvalAwareBench for measuring evaluation awareness and task completion under different evaluation cues.
+The registered Inspect task runs the four-sample EvalAwareBench pilot. It presents the safety and capability versions of the Purple Rain task at baseline and with the F8 cue. Each epoch makes four target generations and four separate judge calls. [Dataset, scoring, and log analysis](src/eval_aware_bench/README.md)
 
 ## Getting started
 
 ```bash
 uv sync
 uv run pre-commit install
-uv run inspect eval eval_aware_bench/eval_aware_bench --model anthropic/claude-sonnet-5-5
+INSPECT_DISABLE_MODEL_API=1 uv run pytest tests/eval_aware_bench/test_eval_aware_bench.py
+```
+
+The test runs `eval_aware_bench/eval_aware_bench` with scripted target and grader replies, then reads the saved logs. For a provider-backed run, select the target with `--model` and the grader with `--model-role`. The grader defaults to `openai/gpt-5`. Provide credentials for both selected models.
+
+```bash
+uv run inspect eval eval_aware_bench/eval_aware_bench --model anthropic/claude-sonnet-5-5 --model-role grader=openai/gpt-5
 uv run inspect view
 ```
 
-Put `INSPECT_EVAL_MODEL` and your API keys in a `.env` file (it is git-ignored) to avoid passing `--model` each time.
+Put `INSPECT_EVAL_MODEL` and your API keys in the git-ignored `.env` file to reuse them across runs.
 
 The dev dependencies include the `anthropic` and `openai` SDKs. Inspect needs one package per model provider, so add the package for any other provider with `uv add --dev <package>`; Inspect's error message names the package when it is missing.
 
