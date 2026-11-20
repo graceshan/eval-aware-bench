@@ -1,6 +1,7 @@
 """Format the EvalAwareBench judge request and parse its three judgments."""
 
 import json
+from functools import cache
 from importlib.resources import files
 from typing import Annotated, Literal, Self
 
@@ -10,10 +11,16 @@ from pydantic import BaseModel, Field, model_validator
 from eval_aware_bench.generation import ResponseText
 
 
+@cache
+def _load_judge_template() -> str:
+    """Cache the unformatted rubric so successive requests reuse the same packaged text."""
+    template = files("eval_aware_bench") / "data" / "judgePromptEvidenceBoth.txt"
+    return template.read_text(encoding="utf-8")
+
+
 def format_judge_request(user_prompt: str, response: ResponseText) -> list[ChatMessage]:
     """Render one upstream system message, preserving the user prompt verbatim."""
-    template = files("eval_aware_bench") / "data" / "judgePromptEvidenceBoth.txt"
-    content = template.read_text(encoding="utf-8").format(
+    content = _load_judge_template().format(
         task=user_prompt,
         reasoning=(response.reasoning or "").strip(),
         answer=response.answer.strip(),
