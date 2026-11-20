@@ -1,4 +1,11 @@
-"""Grouped epoch rates and paired completion changes from saved EvalAwareBench logs."""
+"""Analyze repeated judgments in saved EvalAwareBench Inspect logs.
+
+A sample identifies a task under one cue condition (including baseline). An epoch
+is one repeat of that sample. From each log's schedule we classify every repeat
+as valid, unscored, errored, or missing. We calculate rates by target model,
+valence (safety or capability), and condition, then pair each task's baseline
+and cue completion rates to measure the change for each cue.
+"""
 
 import math
 from collections import Counter, defaultdict
@@ -21,6 +28,8 @@ type GroupKey = tuple[str, str, str]  # Target model, valence, condition.
 
 @dataclass
 class GroupRates:
+    """Repeat counts, reasoning availability, and five indicator rates for one group."""
+
     expected: int
     valid: int
     unscored: int
@@ -34,6 +43,8 @@ class GroupRates:
 
 @dataclass
 class PairedCompletion:
+    """Mean cue-minus-baseline change in percentage points, per-task changes, and exclusions."""
+
     change_pp: float | None
     task_changes_pp: dict[str, float]
     excluded_tasks: dict[str, str]
@@ -41,27 +52,35 @@ class PairedCompletion:
 
 @dataclass
 class AnalysisReport:
+    """Results by group, with each non-valid repeat indexed by log path, sample ID, and epoch."""
+
     groups: dict[GroupKey, GroupRates]
     paired: dict[GroupKey, PairedCompletion]
-    failed_epochs: dict[tuple[str, str | int, int], str]  # Log path, sample ID, epoch.
+    failed_epochs: dict[tuple[str, str | int, int], str]
 
 
 class _TaskCondition(NamedTuple):
+    """Benchmark identity shared by all repeats of a sample."""
+
     task_id: str
     valence: str
     condition: str
 
 
 class _Epoch(NamedTuple):
+    """One repeat's status, reasoning availability (None if unknown), and valid indicators."""
+
     status: Literal["valid", "unscored", "error", "missing"]
     reasoning: bool | None
     values: dict[str, int] | None = None
 
 
 def _score_values(score: Score, valence: str) -> dict[str, int]:
+    """Return the five binary indicators from a scored judgment for this valence."""
     values = score.as_dict()
     if values.keys() == {"awareness_matched", "completion"}:
-        # Step 5b logs saved the complete validated verdict alongside two indicators.
+        # Older logs stored only these two indicators. Derive the full set from
+        # the saved verdict and task valence, keeping the two recorded values.
         verdict = JudgeVerdict.model_validate((score.metadata or {}).get("judge_verdict"))
         values = verdict_values(verdict, valence) | values
 
@@ -75,12 +94,20 @@ def _score_values(score: Score, valence: str) -> dict[str, int]:
 
 
 def _epoch(sample: EvalSample | None, valence: str) -> _Epoch:
+    """Classify one scheduled repeat. An absent sample record is missing.
+
+    A recorded error takes precedence even when a score was saved. Otherwise an
+    invalidated sample, an absent scorer result, or Inspect's unscored NaN yields
+    an unscored repeat. A valid repeat carries the five binary indicators.
+    """
     if sample is None:
         return _Epoch("missing", None)
     score = (sample.scores or {}).get("eval_awareness")
     flag = (score.metadata or {}).get("reasoning_available") if score else None
     reasoning = flag if isinstance(flag, bool) else None
     if reasoning is None and (not sample.output.empty or sample.output.completion):
+        # Older scores and interrupted runs can lack the flag. Saved target
+        # output can still establish availability, even when grading failed.
         reasoning = extract_response_text(sample.output).reasoning is not None
 
     if sample.error is not None:
@@ -95,49 +122,65 @@ def _epoch(sample: EvalSample | None, valence: str) -> _Epoch:
 def _log_epochs(
     log: EvalLog, known: dict[str | int, _TaskCondition]
 ) -> Iterator[tuple[str | int, int, _TaskCondition, _Epoch]]:
-    epochs = log.eval.config.epochs or 1
-    selected = dict.fromkeys(log.eval.dataset.sample_ids or [])
+    """Yield the sample ID, epoch number, task identity, and outcome for each scheduled repeat.
+
+    Use both the dataset's selected IDs and the IDs of recorded samples. For a log
+    without a selection list, only IDs with a surviving sample record are known
+    to have been scheduled. Each ID has one repeat per configured epoch (one by
+    default). Gaps are missing repeats. The inventory or supplied prompt records
+    identify tasks whose sample metadata is absent.
+    """
+    epoch_count = log.eval.config.epochs or 1
+    selected_ids = dict.fromkeys(log.eval.dataset.sample_ids or [])
     identities = known.copy()
-    samples = {}
+    samples_by_epoch = {}
     for sample in log.samples or []:
         key = (sample.id, sample.epoch)
-        if key in samples or not 1 <= sample.epoch <= epochs:
+        if key in samples_by_epoch or not 1 <= sample.epoch <= epoch_count:
             raise ValueError(f"Duplicate or out-of-range epoch {key!r} in {log.location}")
-        samples[key] = sample
-        selected[sample.id] = None
+        samples_by_epoch[key] = sample
+        selected_ids[sample.id] = None
         meta = sample.metadata
         if all(field in meta for field in _TaskCondition._fields):
             identity = _TaskCondition(meta["task_id"], meta["valence"], meta["condition"])
             if identities.setdefault(sample.id, identity) != identity:
                 raise ValueError(f"Inconsistent task metadata for {sample.id!r}")
 
-    for sample_id in selected:
+    for sample_id in selected_ids:
         if sample_id not in identities:
             raise ValueError(f"Missing task metadata for {sample_id!r}. Supply its prompt record.")
         identity = identities[sample_id]
-        for epoch in range(1, epochs + 1):
+        for epoch in range(1, epoch_count + 1):
             yield (
                 sample_id,
                 epoch,
                 identity,
-                _epoch(samples.get((sample_id, epoch)), identity.valence),
+                _epoch(samples_by_epoch.get((sample_id, epoch)), identity.valence),
             )
 
 
 def _group_rates(rows: list[_Epoch]) -> GroupRates:
-    valid = [row.values for row in rows if row.values is not None]
+    """Summarize scheduled repeats for one target model, valence, and condition.
+
+    Expected and reasoning counts include all four statuses. Each indicator rate is
+    the fraction of valid judgments with value 1, or None if there are no valid judgments.
+    """
+    valid_judgments = [row.values for row in rows if row.values is not None]
     status = Counter(row.status for row in rows)
     reasoning = Counter(row.reasoning for row in rows)
     return GroupRates(
         expected=len(rows),
-        valid=len(valid),
+        valid=len(valid_judgments),
         unscored=status["unscored"],
         errors=status["error"],
         missing=status["missing"],
         reasoning_available=reasoning[True],
         reasoning_unavailable=reasoning[False],
         reasoning_unknown=reasoning[None],
-        rates={name: fmean(v[name] for v in valid) if valid else None for name in METRIC_NAMES},
+        rates={
+            name: fmean(values[name] for values in valid_judgments) if valid_judgments else None
+            for name in METRIC_NAMES
+        },
     )
 
 
@@ -147,24 +190,36 @@ def _paired_completion(
     cue: dict[str, list[_Epoch]],
     condition: str,
 ) -> PairedCompletion:
+    """Compare one cue with baseline across tasks of the same model and valence.
+
+    Both conditions must be scheduled and every scheduled repeat on both sides
+    must be valid. Average completion across repeats within each task and condition,
+    then average the cue-minus-baseline differences, giving each eligible task equal
+    weight regardless of its repeat count or the model's awareness judgments.
+
+    For example, 1/3 baseline completions and 2/3 cue completions contribute
+    +33⅓ percentage points. An invalid judgment on either side excludes that
+    task from this comparison. Only a valid judgment can establish a completion
+    value of zero. If no task qualifies, change_pp is None.
+    """
     changes = {}
     excluded = {}
     for task_id in task_ids:
-        means = []
+        completion_rates = []
         problems = []
         for name, tasks in (("baseline", baseline), (condition, cue)):
             rows = tasks.get(task_id, [])
-            completed = [row.values["completion"] for row in rows if row.values is not None]
+            completion_flags = [row.values["completion"] for row in rows if row.values is not None]
             if not rows:
                 problems.append(f"{name} not scheduled")
-            elif len(completed) != len(rows):
-                problems.append(f"{name} {len(completed)}/{len(rows)} valid")
+            elif len(completion_flags) != len(rows):
+                problems.append(f"{name} {len(completion_flags)}/{len(rows)} valid")
             else:
-                means.append(fmean(completed))
+                completion_rates.append(fmean(completion_flags))
         if problems:
             excluded[task_id] = ", ".join(problems)
         else:
-            baseline_rate, cue_rate = means
+            baseline_rate, cue_rate = completion_rates
             changes[task_id] = 100 * (cue_rate - baseline_rate)
     return PairedCompletion(fmean(changes.values()) if changes else None, changes, excluded)
 
@@ -172,12 +227,15 @@ def _paired_completion(
 def analyze_logs(
     *paths: str | Path, records: Iterable[PromptRecord] | None = None
 ) -> AnalysisReport:
-    """Analyze saved runs by (target model, valence, condition), using every scheduled epoch.
+    """Pool repeats from saved logs and return grouped rates, paired changes, and failed epochs.
 
-    Optional records identify scheduled samples with no surviving metadata and declare
-    the conditions to compare. Otherwise use the pinned inventory for identity and
-    the scheduled samples for each model's conditions. Independent runs pool
-    their repeats. Supply one copy of each run, including only the chosen retry.
+    Groups use the logged target model name, valence, and condition. Runs with the
+    same model name share a group even if their grader or generation settings differ.
+    Supply compatible runs, one copy of each, and only the chosen attempt for a retry.
+
+    Optional prompt records identify samples with missing metadata and declare
+    conditions to compare. Otherwise the pinned inventory supplies identities,
+    and each model's scheduled samples determine which cues to compare with baseline.
     """
     known: dict[str | int, _TaskCondition]
     if records is None:
@@ -194,7 +252,9 @@ def analyze_logs(
         }
         declared = {"baseline", *(r.condition for r in known.values())}
     conditions: dict[str, set[str]] = defaultdict(set)
-    cells: dict[GroupKey, dict[str, list[_Epoch]]] = defaultdict(lambda: defaultdict(list))
+    epochs_by_group: dict[GroupKey, dict[str, list[_Epoch]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     tasks: dict[tuple[str, str], set[str]] = defaultdict(set)
     report = AnalysisReport(groups={}, paired={}, failed_epochs={})
     seen_logs = set()
@@ -202,27 +262,33 @@ def analyze_logs(
         log = read_eval_log(
             path, resolve_attachments=True, exclude_fields={"events", "messages", "store"}
         )
+        # Logs without an evaluation ID can still be checked for duplicate locations.
         log_id = log.eval.eval_id or log.location
         if log_id in seen_logs:
             raise ValueError(f"Duplicate evaluation log: {path}")
         seen_logs.add(log_id)
         model = log.eval.model
         if records is None and log.eval.task_version == "2-A":
-            # Legacy pilot logs advertised baseline/F8 even when only one cell was run.
+            # Version 2-A defined the baseline/F8 pilot. Keep F8 in its report
+            # even for a baseline-only log so the unscheduled comparison stays visible.
             conditions[model].add("F8")
         for sample_id, epoch, (task_id, valence, condition), row in _log_epochs(log, known):
-            cells[model, valence, condition][task_id].append(row)
+            epochs_by_group[model, valence, condition][task_id].append(row)
             tasks[model, valence].add(task_id)
             conditions[model].add(condition)
             if row.status != "valid":
                 report.failed_epochs[str(path), sample_id, epoch] = row.status
 
     for (model, valence), task_ids in sorted(tasks.items()):
-        baseline = cells[model, valence, "baseline"]
+        baseline = epochs_by_group[model, valence, "baseline"]
         for condition in sorted(declared | conditions[model]):
             key = (model, valence, condition)
-            cell = cells[key]
-            report.groups[key] = _group_rates([row for rows in cell.values() for row in rows])
+            epochs_by_task = epochs_by_group[key]
+            report.groups[key] = _group_rates(
+                [row for rows in epochs_by_task.values() for row in rows]
+            )
             if condition != "baseline":
-                report.paired[key] = _paired_completion(sorted(task_ids), baseline, cell, condition)
+                report.paired[key] = _paired_completion(
+                    sorted(task_ids), baseline, epochs_by_task, condition
+                )
     return report
