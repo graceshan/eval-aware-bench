@@ -1,6 +1,6 @@
-name: purple-rain-pilot
+name: purple-rain-review
 tasks:
-  - package: git+https://github.com/graceshan/eval-aware-bench@c1f03b1aff9058fdf2edd20baefab7968116b2e6
+  - package: git+https://github.com/graceshan/eval-aware-bench@700ccaefb093ad46ed9f8cf591a97ad814afbc31
     name: eval_aware_bench
     items:
       - name: eval_aware_bench
