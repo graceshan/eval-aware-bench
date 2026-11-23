@@ -14,10 +14,11 @@ from inspect_ai.model import (
 
 from eval_aware_bench.dataset import load_records
 from eval_aware_bench.generation import extract_response_text
+from tests.eval_aware_bench import PILOT_SELECTION
 
 
 def test_offline_generation(tmp_path: Path) -> None:
-    records = load_records()
+    records = load_records(**PILOT_SELECTION)
 
     plan = "Write an original closing line."
     line = "The last chord carries us home."
@@ -49,6 +50,7 @@ def test_offline_generation(tmp_path: Path) -> None:
 
     [run] = eval(
         "eval_aware_bench/eval_aware_bench",
+        task_args=PILOT_SELECTION,
         model=get_model("mockllm/model", custom_outputs=outputs, memoize=False),
         max_samples=1,  # Consume the predetermined outputs in dataset order.
         epochs=1,

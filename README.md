@@ -1,6 +1,6 @@
 # eval-aware-bench
 
-The registered Inspect task defaults to the four-sample Purple Rain pilot. The full single-cue dataset contains 1,800 samples from all 200 pinned task YAMLs. [Pilot and full-dataset selections](src/eval_aware_bench/README.md#dataset)
+The registered Inspect task runs the full single-cue benchmark by default. One epoch covers 1,800 distinct samples from 100 task pairs, both valences, and nine conditions. The Purple Rain smoke test is available as an explicit four-sample configuration. [Dataset selections](src/eval_aware_bench/README.md#dataset)
 
 ## Getting started
 
@@ -10,7 +10,13 @@ uv run pre-commit install
 INSPECT_DISABLE_MODEL_API=1 uv run pytest tests/eval_aware_bench/test_eval_aware_bench.py
 ```
 
-The test runs `eval_aware_bench/eval_aware_bench` with scripted target and grader replies, then reads the saved logs. To run the four-sample pilot through OpenRouter, set `OPENROUTER_API_KEY` in the project-root `.env` file or your environment. The pilot uses GPT-OSS-120B as the target and GPT-5 as the grader. [Pilot settings, overrides, and audit](src/eval_aware_bench/README.md#openrouter-pilot)
+The test checks the full task's schedule and runs the pilot with scripted target and grader replies. To run the full benchmark for one epoch with an OpenAI target and the default GPT-5 grader, set `OPENAI_API_KEY` and run:
+
+```bash
+uv run inspect eval eval_aware_bench/eval_aware_bench --model openai/gpt-5-nano
+```
+
+To run the four-sample pilot through OpenRouter, set `OPENROUTER_API_KEY` in the project-root `.env` file or your environment. The pilot uses GPT-OSS-120B as the target and GPT-5 as the grader. [Pilot settings, overrides, and audit](src/eval_aware_bench/README.md#openrouter-pilot)
 
 ```bash
 INSPECT_HTTP_CONNECT_RETRIES=0 uv run inspect eval --run-config src/eval_aware_bench/run_configs/pilot.yaml

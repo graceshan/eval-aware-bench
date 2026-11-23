@@ -1,10 +1,10 @@
 title: "eval-aware-bench"
 description: |
-  Measures evaluation awareness and completion on selectable task pairs at baseline and with single evaluation cues F1–F8. The default is the four-sample Purple Rain pilot.
+  Measures evaluation awareness and completion on 100 safety/capability task pairs at baseline and with single evaluation cues F1–F8. The default covers all 1,800 distinct samples.
 group: Knowledge # pick the group used by the inspect_evals listing for this benchmark
 contributors:
   - graceshan
-version: "2-B"
+version: "3-B"
 tasks:
   - name: eval_aware_bench
-    dataset_samples: 4
+    dataset_samples: 1800

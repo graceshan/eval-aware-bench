@@ -21,6 +21,7 @@ from eval_aware_bench.analysis import analyze_logs
 from eval_aware_bench.dataset import load_records, record_to_sample
 from eval_aware_bench.generation import ResponseText, extract_response_text
 from eval_aware_bench.judge import format_judge_request
+from tests.eval_aware_bench import PILOT_SELECTION
 
 REGISTERED_TASK = "eval_aware_bench/eval_aware_bench"
 
@@ -100,6 +101,7 @@ def run_pilot(tmp_path: Path, cases: Iterable[Case], epochs: int | None = None) 
 
     [run] = eval(
         REGISTERED_TASK,
+        task_args=PILOT_SELECTION,
         model=get_model("mockllm/target", custom_outputs=target_outputs),
         model_roles={"grader": get_model("mockllm/grader", custom_outputs=grader_outputs)},
         max_samples=1,  # Consume both output sequences in dataset order.
@@ -112,13 +114,27 @@ def run_pilot(tmp_path: Path, cases: Iterable[Case], epochs: int | None = None) 
     return read_eval_log(run.location, resolve_attachments=True)
 
 
+def test_registered_default_dataset(tmp_path: Path) -> None:
+    [plan] = eval(
+        REGISTERED_TASK,
+        model="mockllm/model",
+        run_samples=False,
+        display="none",
+        log_dir=str(tmp_path),
+    )
+    assert plan.eval.task_registry_name == REGISTERED_TASK
+    assert plan.eval.config.epochs == 1
+    assert plan.eval.dataset.samples == 1800
+    assert plan.eval.dataset.sample_ids == [r["id"] for r in load_records()]
+
+
 @pytest.mark.parametrize("invalid_first", [False, True], ids=["valid", "invalid-first"])
 def test_registered_pilot(tmp_path: Path, invalid_first: bool) -> None:
-    records = load_records()
+    records = load_records(**PILOT_SELECTION)
     cases = pilot_cases(invalid_first)
     saved = run_pilot(tmp_path, (cases[r["valence"], r["condition"]] for r in records))
     assert saved.eval.task_registry_name == REGISTERED_TASK
-    assert saved.eval.task_version == "2-B"
+    assert saved.eval.task_version == "3-B"
     assert saved.eval.config.epochs == 1
     assert [step.solver for step in saved.plan.steps] == ["generate"]
     assert saved.samples is not None
@@ -194,7 +210,7 @@ def test_registered_pilot(tmp_path: Path, invalid_first: bool) -> None:
 
 
 def test_registered_pilot_three_epochs(tmp_path: Path) -> None:
-    records = load_records()
+    records = load_records(**PILOT_SELECTION)
     cases = pilot_cases()
     # In epoch 3 the safety F8 target completes the task, as in the baseline case.
     third_epoch = cases | {("safety", "F8"): cases["safety", "baseline"]}

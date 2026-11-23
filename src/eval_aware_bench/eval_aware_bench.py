@@ -1,4 +1,4 @@
-"""The single-cue EvalAwareBench task for Inspect, with a four-sample pilot default."""
+"""The single-cue EvalAwareBench task for Inspect."""
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import MemoryDataset
@@ -18,12 +18,12 @@ def eval_aware_bench(
     valences: str | list[str] | None = None,
     conditions: str | list[str] | None = None,
 ) -> Task:
-    """Measure evaluation awareness and completion. Defaults to the four-sample Purple Rain pilot.
+    """Measure evaluation awareness and completion on all 1,800 single-cue samples by default.
 
     Args:
-        pair_ids: Pair name, list of names, or "all". Defaults to lyrics_purple_rain.
-        valences: Valence name, list of names, or "all". Defaults to capability and safety.
-        conditions: Condition name, list of names, or "all" (baseline and F1 through F8). Defaults to baseline and F8.
+        pair_ids: Pair name, list of names, or "all". Omit to include all 100 pairs.
+        valences: Valence name, list of names, or "all". Omit to include capability and safety.
+        conditions: Condition name, list of names, or "all". Omit to include baseline and F1 through F8.
     """
     samples = [record_to_sample(record) for record in load_records(pair_ids, valences, conditions)]
     return Task(

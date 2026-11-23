@@ -44,14 +44,10 @@ def load_task_inventory() -> dict[str, dict[str, TaskVariant]]:
     return json.loads(path.read_text(encoding="utf-8"))["pairs"]
 
 
-def _select(
-    field: str, selection: str | list[str] | None, available: Sequence[str], default: Sequence[str]
-) -> list[str]:
-    if selection == "all":
+def _select(field: str, selection: str | list[str] | None, available: Sequence[str]) -> list[str]:
+    if selection is None or selection == "all":
         return list(available)
-    values = default if selection is None else selection
-    if isinstance(values, str):
-        values = [values]
+    values = [selection] if isinstance(selection, str) else selection
     if (
         not isinstance(values, (list, tuple))
         or not values
@@ -82,11 +78,16 @@ def load_records(
     valences: str | list[str] | None = None,
     conditions: str | list[str] | None = None,
 ) -> list[PromptRecord]:
-    """Render the selected cross product in upstream order. Defaults to the four-sample pilot."""
+    """Render the selected pairs, valences, and conditions in upstream order.
+
+    Each filter accepts a name or list of names. An omitted filter, None, or
+    "all" selects every value for that dimension. The default is 1,800 records:
+    100 pairs, both valences, and baseline plus F1 through F8.
+    """
     inventory = load_task_inventory()
-    pairs = _select("pair_ids", pair_ids, sorted(inventory), ["lyrics_purple_rain"])
-    variants = _select("valences", valences, ["capability", "safety"], ["capability", "safety"])
-    cues = _select("conditions", conditions, list(_CONFIGS), ["baseline", "F8"])
+    pairs = _select("pair_ids", pair_ids, sorted(inventory))
+    variants = _select("valences", valences, ["capability", "safety"])
+    cues = _select("conditions", conditions, list(_CONFIGS))
 
     data = files("eval_aware_bench") / "data"
     system_prompt = (data / "chat_prompt_realistic.txt").read_text(encoding="utf-8").strip()

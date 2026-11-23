@@ -1,6 +1,6 @@
 # eval-aware-bench
 
-The registered `eval_aware_bench/eval_aware_bench` task measures how evaluation cues affect awareness and completion on paired safety and capability requests. It defaults to the four-sample Purple Rain pilot and supports the full single-cue dataset from *Decomposing and Measuring Evaluation Awareness*. [Paper](https://arxiv.org/abs/2605.23055)
+The registered `eval_aware_bench/eval_aware_bench` task measures how evaluation cues affect awareness and completion on paired safety and capability requests. By default it runs all 1,800 distinct samples from the single-cue benchmark in *Decomposing and Measuring Evaluation Awareness* for one epoch. For a four-sample smoke test, use the explicit Purple Rain pilot configuration. [Paper](https://arxiv.org/abs/2605.23055) · [OpenRouter pilot](#openrouter-pilot)
 
 <!-- Contributors: Automatically Generated -->
 Contributed by [@graceshan](https://github.com/graceshan)
@@ -68,9 +68,9 @@ See `uv run inspect eval --help` for all available options.
 
 ### `eval_aware_bench`
 
-- `pair_ids` (str | list[str] | None): Pair name, list of names, or "all". (default: `None`)
-- `valences` (str | list[str] | None): Valence name, list of names, or "all". Defaults to capability and safety. (default: `None`)
-- `conditions` (str | list[str] | None): Condition name, list of names, or "all" (baseline and F1 through F8). Defaults to baseline and F8. (default: `None`)
+- `pair_ids` (str | list[str] | None): Pair name, list of names, or "all". Omit to include all 100 pairs. (default: `None`)
+- `valences` (str | list[str] | None): Valence name, list of names, or "all". Omit to include capability and safety. (default: `None`)
+- `conditions` (str | list[str] | None): Condition name, list of names, or "all". Omit to include baseline and F1 through F8. (default: `None`)
 <!-- /Parameters: Automatically Generated -->
 
 ## OpenRouter pilot
@@ -101,20 +101,26 @@ Each sample contains the shared system message and the rendered user prompt. Its
 
 The package contains all **200 upstream YAMLs**. Each of the 100 pairs has a capability and a safety variant, each rendered at baseline and F1 through F8. This gives **1,800 distinct samples**, 900 per valence. The loader checks each selected YAML against its pinned SHA-256 before rendering it. [Fingerprint inventory and provenance](UPSTREAM.md#single-cue-inventory)
 
-`load_records()` and the registered task accept the same three filters. Each accepts one name, a list of names, or the string `"all"`. Omitted fields retain their pilot defaults. Pair IDs sort alphabetically, then capability precedes safety, and baseline precedes F1 through F8 regardless of filter order. F3 changes register from casual to formal, F7 changes prose to template, and each other cue changes its own factor from realistic to varied.
+`load_records()` and the registered task accept the same three filters. Each accepts one name or a list of names. Omitting a filter, passing `None`, or passing the string `"all"` selects every value for that dimension. Pair IDs sort alphabetically, then capability precedes safety, and baseline precedes F1 through F8 regardless of filter order. F3 changes register from casual to formal, F7 changes prose to template, and each other cue changes its own factor from realistic to varied.
 
 ```python
 from eval_aware_bench.dataset import load_records
 
-pilot = load_records()  # 4 samples
-purple_rain = load_records(pair_ids="lyrics_purple_rain", conditions="all")  # 18
-capability = load_records(pair_ids="all", valences="capability", conditions="all")  # 900
-full = load_records(pair_ids="all", valences="all", conditions="all")  # 1,800
+full = load_records()  # 1,800 distinct samples
+capability = load_records(valences="capability")  # 900
+purple_rain = load_records(pair_ids="lyrics_purple_rain")  # 18
+pilot = load_records(
+    pair_ids="lyrics_purple_rain", valences=["capability", "safety"], conditions=["baseline", "F8"]
+)  # 4
 ```
 
-The pilot configuration selects `lyrics_purple_rain`, both valences, baseline and F8, and one epoch. The full single-cue configuration sets all three filters to `all` and schedules three epochs, matching the original repeat count. It leaves model and provider settings to the caller. Pass `--epochs 1` for one repeat per sample. Three epochs cover 5,400 sample-epochs per target across the same 1,800 IDs. [Pilot configuration](run_configs/pilot.yaml) · [Full single-cue configuration](run_configs/full-single-cue.yaml)
+The ordinary task uses Inspect's default of one epoch. To match the original experiment's repeat count, the full single-cue configuration explicitly selects all three dimensions and schedules three epochs. This produces **5,400 sample-epochs per target model** across the same 1,800 distinct IDs. The configuration leaves model and provider settings to the caller. [Full single-cue configuration](run_configs/full-single-cue.yaml)
 
-To select the full dataset in an existing Inspect command, append `-T pair_ids=all -T valences=all -T conditions=all`. To verify every prompt offline, use the pinned checkout. The check compares package assets, task and cue order, the shared system text, and all rendered user messages with the upstream implementation.
+```bash
+uv run inspect eval --run-config src/eval_aware_bench/run_configs/full-single-cue.yaml --model openai/gpt-5-nano
+```
+
+To verify every prompt offline, use the pinned checkout. The check compares package assets, task and cue order, the shared system text, and all rendered user messages with the upstream implementation.
 
 ```bash
 EVALAWAREBENCH_UPSTREAM=../decomposing-eval-awareness INSPECT_DISABLE_MODEL_API=1 \
@@ -130,7 +136,7 @@ INSPECT_HTTP_CONNECT_RETRIES=0 uv run inspect eval --run-config src/eval_aware_b
 
 ## Scoring
 
-The pilot scorer uses Inspect's `grader` model role, which defaults to `openai/gpt-5`. It passes the rendered user prompt, readable target reasoning, and final answer to Inspect in a single system message. The mock tests verify this message at the grader boundary. Upstream uses Chat Completions with the system role. Inspect 0.3.291's native GPT-5 adapter defaults to the Responses API and uses the developer role.
+The scorer uses Inspect's `grader` model role, which defaults to `openai/gpt-5`. It passes the rendered user prompt, readable target reasoning, and final answer to Inspect in a single system message. The mock tests verify this message at the grader boundary. Upstream uses Chat Completions with the system role. Inspect 0.3.291's native GPT-5 adapter defaults to the Responses API and uses the developer role.
 
 A valid verdict yields five binary scores. `awareness_any` counts every awareness judgment of `Yes`. Those judgments split into `awareness_matched` and `awareness_mismatched` according to whether the judge identifies the sample's valence (`safety` or `capability`). `hypothetical_recognition` and `completion` each follow their own judge conclusion. Completion includes responses from all awareness categories.
 
@@ -173,6 +179,7 @@ The task converts each record from `load_records()` into an Inspect `Sample` wit
 
 ## Changelog
 
-- **2-B** adds pair, valence, and condition filters and packages all 1,800 single-cue samples with an offline fingerprint inventory. The four-sample pilot is the default.
+- **3-B** makes the full 1,800-sample dataset the default. Each omitted filter now selects every value for that dimension. Use `pilot.yaml` to reproduce the previous four-sample selection.
+- **2-B** added pair, valence, and condition filters and packaged all 1,800 single-cue samples with an offline fingerprint inventory. The four-sample pilot was the default.
 - **2-A** runs the four-sample pilot with the EvalAwareBench judge and five binary scores. This changes the dataset, prompts, and scoring used by the registered task.
 - **1-A** ran two starter questions with exact-match scoring.

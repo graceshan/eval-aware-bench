@@ -9,6 +9,7 @@ from inspect_ai.dataset import Sample
 
 from eval_aware_bench.dataset import PromptRecord, load_records, record_to_sample
 from eval_aware_bench.eval_aware_bench import eval_aware_bench
+from tests.eval_aware_bench import PILOT_SELECTION
 
 
 def test_record_ids_and_factor_settings() -> None:
@@ -23,7 +24,7 @@ def test_record_ids_and_factor_settings() -> None:
         "F7": "prose",
         "F8": "realistic",
     }
-    records = load_records()
+    records = load_records(**PILOT_SELECTION)
     assert len(records) == 4
     assert {record["id"] for record in records} == {
         f"{pair}_{valence}_{condition}"
@@ -42,7 +43,7 @@ def test_messages_match_pinned_upstream(tmp_path: Path, monkeypatch: pytest.Monk
     fixture = Path(__file__).with_name("lyrics_purple_rain_reference.json")
     expected = json.loads(fixture.read_text(encoding="utf-8"))
     monkeypatch.chdir(tmp_path)
-    for record in load_records():
+    for record in load_records(**PILOT_SELECTION):
         assert record["system_prompt"] == expected["system_prompt"]
         assert (
             record["user_prompt"]
@@ -50,7 +51,7 @@ def test_messages_match_pinned_upstream(tmp_path: Path, monkeypatch: pytest.Monk
         )
 
 
-@pytest.mark.parametrize("record", load_records(), ids=lambda record: record["id"])
+@pytest.mark.parametrize("record", load_records(**PILOT_SELECTION), ids=lambda record: record["id"])
 def test_record_to_sample(record: PromptRecord) -> None:
     sample = record_to_sample(record)
 
@@ -100,11 +101,12 @@ def test_single_cue_inventory_and_packaged_records() -> None:
     assert actual_assets == expected_assets
     assert len(actual_assets) == 200
 
-    records = load_records(pair_ids="all", valences="all", conditions="all")
+    records = load_records()
     ids = [r["id"] for r in records]
     assert ids == expected_ids
     assert len(set(ids)) == 1800
     assert Counter(r["valence"] for r in records) == {"capability": 900, "safety": 900}
+    assert Counter(r["condition"] for r in records) == dict.fromkeys(cues, 200)
     for r in records:
         variant = pairs[r["pair_id"]][r["valence"]]
         sample = record_to_sample(r)
@@ -120,7 +122,7 @@ def test_single_cue_inventory_and_packaged_records() -> None:
         assert sha256(user.content.encode()).hexdigest() == variant["user_sha256"][r["condition"]]
 
 
-def test_filters_preserve_upstream_order_and_pilot_defaults() -> None:
+def test_filters_preserve_upstream_order() -> None:
     task = eval_aware_bench(
         ["lyrics_purple_rain", "lyrics_99_problems"], "capability", ["F7", "F3"]
     )
@@ -129,9 +131,17 @@ def test_filters_preserve_upstream_order_and_pilot_defaults() -> None:
         for pair in ("lyrics_99_problems", "lyrics_purple_rain")
         for cue in ("F3", "F7")
     ]
-    all_cues = load_records(conditions="all")
-    assert len(all_cues) == 18
-    assert [r for r in all_cues if r["condition"] in ("baseline", "F8")] == load_records()
+
+
+def test_partial_filters_include_all_values_for_omitted_dimensions() -> None:
+    purple_rain = load_records(pair_ids="lyrics_purple_rain")
+    assert len(purple_rain) == 18
+    assert [r for r in purple_rain if r["condition"] in ("baseline", "F8")] == load_records(
+        **PILOT_SELECTION
+    )
+    safety_f3 = load_records(pair_ids=None, valences="safety", conditions="F3")
+    assert len({r["pair_id"] for r in safety_f3}) == len(safety_f3) == 100
+    assert {(r["valence"], r["condition"]) for r in safety_f3} == {("safety", "F3")}
 
 
 @pytest.mark.parametrize(
