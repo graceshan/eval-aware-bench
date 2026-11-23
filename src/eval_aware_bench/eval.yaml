@@ -1,7 +1,7 @@
 title: "eval-aware-bench"
 description: |
   Measures evaluation awareness and completion on 100 safety/capability task pairs at baseline and with single evaluation cues F1–F8. The default covers all 1,800 distinct samples.
-group: Knowledge # pick the group used by the inspect_evals listing for this benchmark
+group: Scheming
 contributors:
   - graceshan
 version: "3-B"
