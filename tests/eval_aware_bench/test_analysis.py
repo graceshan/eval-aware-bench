@@ -9,9 +9,10 @@ from inspect_ai.log import (
     EvalLog,
     EvalSample,
     EvalSpec,
+    read_eval_log,
     write_eval_log,
 )
-from inspect_ai.model import ModelOutput
+from inspect_ai.model import ContentReasoning, ModelOutput
 from inspect_ai.scorer import Score
 
 from eval_aware_bench.analysis import analyze_logs
@@ -165,6 +166,9 @@ def test_grouped_rates_from_saved_epochs(saved_runs: list[Path]) -> None:
     cap = groups["mockllm/a", "capability", "baseline"]
     assert (cap.valid, cap.expected, cap.unscored, cap.errors, cap.missing) == (4, 6, 1, 1, 0)
     assert (cap.reasoning_available, cap.reasoning_unavailable, cap.reasoning_unknown) == (3, 3, 0)
+    # Two old False flags and the answer saved before the grader error establish absence.
+    assert cap.reasoning_status_counts == {"usable": 0, "empty": 0, "unavailable": 3, "unknown": 3}
+    assert cap.usable_reasoning_rate == 0
     assert cap.rates == {
         "awareness_any": 1 / 4,
         "awareness_matched": 1 / 4,
@@ -184,8 +188,63 @@ def test_grouped_rates_from_saved_epochs(saved_runs: list[Path]) -> None:
         3,
     )
     assert all(rate is None for rate in missing.rates.values())
+    assert missing.reasoning_status_counts["unknown"] == 3
+    assert missing.usable_reasoning_rate is None
     unscheduled = groups["mockllm/b", "capability", "baseline"]
     assert (unscheduled.expected, unscheduled.rates["completion"]) == (0, None)
+    assert unscheduled.usable_reasoning_rate is None
+
+
+def test_reasoning_coverage_with_partial_historical_outputs(tmp_path: Path) -> None:
+    model = "mockllm/target"
+    present = judged("none", 0, 1)
+    absent = judged("none", 0, 1, reasoning=False)
+    no_metadata = Score(value=present.value)
+    diagnosed = Score.unscored(
+        reason="grader_failed", metadata={"reasoning_available": True, "reasoning_status": "empty"}
+    )
+    path = save_log(
+        tmp_path / "partial.eval",
+        model,
+        8,
+        {
+            (CAPABILITY, "baseline"): [
+                present,
+                present,
+                present,
+                absent,
+                no_metadata,
+                None,
+                present,
+                diagnosed,
+            ]
+        },
+    )
+    log = read_eval_log(path)
+    samples = {s.epoch: s for s in log.samples or []}
+    samples[1].output = ModelOutput.from_content(
+        model, [ContentReasoning(reasoning="ciphertext", redacted=True, summary="Public summary.")]
+    )
+    samples[2].output = ModelOutput.from_content(model, [ContentReasoning(reasoning=" \t\n")])
+    # The flag says reasoning existed, but this copy of the output retains only the answer.
+    samples[7].output = ModelOutput(completion="Answer.")
+    write_eval_log(log, path)
+
+    group = analyze_logs(path).groups[model, "capability", "baseline"]
+    assert (group.expected, group.valid, group.unscored, group.missing) == (8, 6, 1, 1)
+    assert (group.reasoning_available, group.reasoning_unavailable, group.reasoning_unknown) == (
+        5,
+        1,
+        2,
+    )
+    assert group.reasoning_status_counts == {
+        "usable": 1,
+        "empty": 2,
+        "unavailable": 1,
+        "unknown": 4,
+    }
+    assert group.usable_reasoning_rate == 1 / 4
+    assert group.rates["completion"] == 1
 
 
 def test_task_weighted_paired_changes_and_exclusions(saved_runs: list[Path]) -> None:

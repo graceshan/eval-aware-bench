@@ -19,11 +19,12 @@ from inspect_ai.log import EvalLog, EvalSample, read_eval_log
 from inspect_ai.scorer import Score
 
 from eval_aware_bench.dataset import PromptRecord, load_task_inventory
-from eval_aware_bench.generation import extract_response_text
+from eval_aware_bench.generation import ReasoningStatus, extract_response_text
 from eval_aware_bench.judge import JudgeVerdict
 from eval_aware_bench.scorers import METRIC_NAMES, verdict_values
 
 type GroupKey = tuple[str, str, str]  # Target model, valence, condition.
+type LoggedReasoningStatus = ReasoningStatus | Literal["unknown"]
 
 
 @dataclass
@@ -39,6 +40,8 @@ class GroupRates:
     reasoning_unavailable: int
     reasoning_unknown: int
     rates: dict[str, float | None]
+    reasoning_status_counts: dict[LoggedReasoningStatus, int]
+    usable_reasoning_rate: float | None
 
 
 @dataclass
@@ -68,10 +71,11 @@ class _TaskCondition(NamedTuple):
 
 
 class _Epoch(NamedTuple):
-    """One repeat's status, reasoning availability (None if unknown), and valid indicators."""
+    """One repeat's outcome, legacy reasoning flag, evidence status, and valid indicators."""
 
     status: Literal["valid", "unscored", "error", "missing"]
     reasoning: bool | None
+    reasoning_status: LoggedReasoningStatus
     values: dict[str, int] | None = None
 
 
@@ -93,6 +97,27 @@ def _score_values(score: Score, valence: str) -> dict[str, int]:
     return indicators
 
 
+def _reasoning_diagnostics(
+    sample: EvalSample, score: Score | None
+) -> tuple[bool | None, LoggedReasoningStatus]:
+    """Recover the legacy presence flag and the evidence available to this repeat's judge."""
+    metadata = (score.metadata or {}) if score else {}
+    flag = metadata.get("reasoning_available")
+    status = metadata.get("reasoning_status")
+    if status not in ("unavailable", "empty", "usable"):
+        if not sample.output.empty or sample.output.completion:
+            status = extract_response_text(sample.output).reasoning_status
+            if flag is True and status == "unavailable":
+                # The flag records a string, but its text is absent from this copy of the output.
+                status = "unknown"
+        else:
+            # A legacy True establishes presence but cannot distinguish empty from usable.
+            status = "unavailable" if flag is False else "unknown"
+    if not isinstance(flag, bool):
+        flag = None if status == "unknown" else status != "unavailable"
+    return flag, status
+
+
 def _epoch(sample: EvalSample | None, valence: str) -> _Epoch:
     """Classify one scheduled repeat. An absent sample record is missing.
 
@@ -101,22 +126,17 @@ def _epoch(sample: EvalSample | None, valence: str) -> _Epoch:
     an unscored repeat. A valid repeat carries the five binary indicators.
     """
     if sample is None:
-        return _Epoch("missing", None)
+        return _Epoch("missing", None, "unknown")
     score = (sample.scores or {}).get("eval_awareness")
-    flag = (score.metadata or {}).get("reasoning_available") if score else None
-    reasoning = flag if isinstance(flag, bool) else None
-    if reasoning is None and (not sample.output.empty or sample.output.completion):
-        # Older scores and interrupted runs can lack the flag. Saved target
-        # output can still establish availability, even when grading failed.
-        reasoning = extract_response_text(sample.output).reasoning is not None
+    presence, reasoning_status = _reasoning_diagnostics(sample, score)
 
     if sample.error is not None:
-        return _Epoch("error", reasoning)
+        return _Epoch("error", presence, reasoning_status)
     if sample.invalidation is not None or score is None:
-        return _Epoch("unscored", reasoning)
+        return _Epoch("unscored", presence, reasoning_status)
     if isinstance(score.value, float) and math.isnan(score.value):
-        return _Epoch("unscored", reasoning)
-    return _Epoch("valid", reasoning, _score_values(score, valence))
+        return _Epoch("unscored", presence, reasoning_status)
+    return _Epoch("valid", presence, reasoning_status, _score_values(score, valence))
 
 
 def _log_epochs(
@@ -162,12 +182,14 @@ def _log_epochs(
 def _group_rates(rows: list[_Epoch]) -> GroupRates:
     """Summarize scheduled repeats for one target model, valence, and condition.
 
-    Expected and reasoning counts include all four statuses. Each indicator rate is
-    the fraction of valid judgments with value 1, or None if there are no valid judgments.
+    Reasoning counts include all scheduled repeats. Usable reasoning is a fraction
+    of repeats with known reasoning status. Each score rate uses only valid judgments.
     """
     valid_judgments = [row.values for row in rows if row.values is not None]
     status = Counter(row.status for row in rows)
     reasoning = Counter(row.reasoning for row in rows)
+    evidence = Counter(row.reasoning_status for row in rows)
+    known = len(rows) - evidence["unknown"]
     return GroupRates(
         expected=len(rows),
         valid=len(valid_judgments),
@@ -177,6 +199,13 @@ def _group_rates(rows: list[_Epoch]) -> GroupRates:
         reasoning_available=reasoning[True],
         reasoning_unavailable=reasoning[False],
         reasoning_unknown=reasoning[None],
+        reasoning_status_counts={
+            "usable": evidence["usable"],
+            "empty": evidence["empty"],
+            "unavailable": evidence["unavailable"],
+            "unknown": evidence["unknown"],
+        },
+        usable_reasoning_rate=evidence["usable"] / known if known else None,
         rates={
             name: fmean(values[name] for values in valid_judgments) if valid_judgments else None
             for name in METRIC_NAMES

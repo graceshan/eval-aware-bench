@@ -1,0 +1,41 @@
+task:
+  task: eval_aware_bench/eval_aware_bench
+  args:
+    pair_ids: all
+    valences: all
+    conditions: all
+model:
+  model: anthropic/claude-sonnet-4-5-20250929
+  base_url: https://api.anthropic.com
+  config:
+    max_tokens: 4096
+    reasoning_tokens: 2457  # Upstream clamps the thinking budget to int(4096 * 0.6).
+    cache_prompt: false
+    max_connections: 10
+  args:
+    streaming: false
+    default_headers:
+      anthropic-version: "2023-06-01"
+    max_retries: 0
+model_roles:
+  grader:
+    model: openai/gpt-5
+    base_url: https://api.openai.com/v1
+    config:
+      max_connections: 20
+      max_retries: 1
+      cache: false
+    args:
+      responses_api: false
+      streaming: false
+      max_retries: 0
+generate_config:
+  max_retries: 1
+  cache: false
+eval_config:
+  epochs: 3
+  retry_on_error: 0
+  fail_on_error: false
+  score_on_error: false
+  log_samples: true
+  log_model_api: true

@@ -1,13 +1,22 @@
 """Read the response channels from an Inspect generation."""
 
-from typing import NamedTuple
+from typing import Literal, NamedTuple
 
 from inspect_ai.model import ContentReasoning, ModelOutput
+
+type ReasoningStatus = Literal["unavailable", "empty", "usable"]
 
 
 class ResponseText(NamedTuple):
     reasoning: str | None
     answer: str
+
+    @property
+    def reasoning_status(self) -> ReasoningStatus:
+        """Classify the extracted text using the judge formatter's whitespace rule."""
+        if self.reasoning is None:
+            return "unavailable"
+        return "usable" if self.reasoning.strip() else "empty"
 
 
 def extract_response_text(output: ModelOutput) -> ResponseText:

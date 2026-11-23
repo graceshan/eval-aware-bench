@@ -10,24 +10,30 @@ from inspect_ai import eval
 from inspect_ai.log import EvalLog, read_eval_log
 
 
-def load_config_header(
-    name: str, options: list[str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def run_config(
+    name: str,
+    options: list[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    run_samples: bool = False,
 ) -> EvalLog:
-    monkeypatch.setenv("OPENROUTER_API_KEY", "offline")
-    monkeypatch.setenv("INSPECT_DISABLE_MODEL_API", "1")
+    for key in ("OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+        monkeypatch.setenv(key, "offline")
+    if not run_samples:
+        monkeypatch.setenv("INSPECT_DISABLE_MODEL_API", "1")
     config = files("eval_aware_bench") / "run_configs" / name
     with as_file(config) as path:
         args = ["inspect", "eval", "--run-config", str(path), "--log-dir", str(tmp_path)]
         monkeypatch.setattr(sys, "argv", [*args, "--display", "none", *options])
-        # Resolve the registered task, models and plan without running any samples.
         with (
-            patch("inspect_ai._cli.eval.eval", partial(eval, run_samples=False)),
+            patch("inspect_ai._cli.eval.eval", partial(eval, run_samples=run_samples)),
             pytest.raises(SystemExit) as exit_info,
         ):
             run_module("inspect_ai", run_name="__main__")
     assert exit_info.value.code == 0
     [log_path] = tmp_path.glob("*.eval")
-    return read_eval_log(log_path, header_only=True)
+    return read_eval_log(log_path, header_only=not run_samples)
 
 
 @pytest.mark.parametrize(
@@ -58,7 +64,7 @@ def test_pilot_run_config(
     epochs: int,
     conditions: list[str],
 ) -> None:
-    log = load_config_header("pilot.yaml", options, tmp_path, monkeypatch)
+    log = run_config("pilot.yaml", options, tmp_path, monkeypatch)
     assert log.eval.task == "eval_aware_bench/eval_aware_bench"
     assert log.eval.task_args == {
         "pair_ids": ["lyrics_purple_rain"],
@@ -93,9 +99,7 @@ def test_pilot_run_config(
 
 
 def test_full_single_cue_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    log = load_config_header(
-        "full-single-cue.yaml", ["--model", "mockllm/model"], tmp_path, monkeypatch
-    )
+    log = run_config("full-single-cue.yaml", ["--model", "mockllm/model"], tmp_path, monkeypatch)
     assert log.eval.task == "eval_aware_bench/eval_aware_bench"
     assert log.eval.task_args == dict.fromkeys(("pair_ids", "valences", "conditions"), "all")
     assert log.eval.config.epochs == 3

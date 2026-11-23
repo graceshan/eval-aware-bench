@@ -1,0 +1,41 @@
+task:
+  task: eval_aware_bench/eval_aware_bench
+  args:
+    pair_ids: all
+    valences: all
+    conditions: all
+model:
+  model: openai/gpt-5
+  base_url: https://api.openai.com/v1
+  config:
+    max_tokens: 4096
+    reasoning_effort: high
+    reasoning_summary: detailed
+    max_connections: 10
+  args:
+    responses_api: true
+    responses_store: true  # Use OpenAI's storage default, as in the upstream Responses request.
+    streaming: false
+    max_retries: 0
+model_roles:
+  grader:
+    model: openai/gpt-5
+    base_url: https://api.openai.com/v1
+    config:
+      max_connections: 20
+      max_retries: 1
+      cache: false
+    args:
+      responses_api: false
+      streaming: false
+      max_retries: 0
+generate_config:
+  max_retries: 1
+  cache: false
+eval_config:
+  epochs: 3
+  retry_on_error: 0
+  fail_on_error: false
+  score_on_error: false
+  log_samples: true
+  log_model_api: true

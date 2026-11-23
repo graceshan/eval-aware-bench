@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from inspect_ai import eval
 from inspect_ai.event import ModelEvent
 from inspect_ai.log import read_eval_log
@@ -15,6 +16,33 @@ from inspect_ai.model import (
 from eval_aware_bench.dataset import load_records
 from eval_aware_bench.generation import extract_response_text
 from tests.eval_aware_bench import PILOT_SELECTION
+
+
+@pytest.mark.parametrize(
+    ("block", "expected_text", "status"),
+    [
+        (None, None, "unavailable"),
+        (ContentReasoning(reasoning=""), "", "empty"),
+        (ContentReasoning(reasoning=" \t\n"), " \t\n", "empty"),
+        (ContentReasoning(reasoning=" A thought. "), " A thought. ", "usable"),
+        (ContentReasoning(reasoning="ciphertext", redacted=True), None, "unavailable"),
+        (ContentReasoning(reasoning="ciphertext", redacted=True, summary=""), "", "empty"),
+        (
+            ContentReasoning(reasoning="ciphertext", redacted=True, summary="Summary."),
+            "Summary.",
+            "usable",
+        ),
+    ],
+    ids=["absent", "empty", "whitespace", "text", "redacted", "blank-summary", "readable-summary"],
+)
+def test_reasoning_status(
+    block: ContentReasoning | None, expected_text: str | None, status: str
+) -> None:
+    content: list[Content] = [block] if block is not None else []
+    content.append(ContentText(text="Answer."))
+    response = extract_response_text(ModelOutput.from_content("mockllm/target", content))
+    assert response == (expected_text, "Answer.")
+    assert response.reasoning_status == status
 
 
 def test_offline_generation(tmp_path: Path) -> None:

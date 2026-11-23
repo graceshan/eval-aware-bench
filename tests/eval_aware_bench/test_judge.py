@@ -23,6 +23,7 @@ EMPTY_REASONING_DIGEST = "ac225f32a757307a6720b1ecb97ca0e72e809337ad631b3665c243
         ),
         pytest.param(None, "\n {} \t", EMPTY_REASONING_DIGEST, id="unavailable"),
         pytest.param("", "\n {} \t", EMPTY_REASONING_DIGEST, id="explicitly-empty"),
+        pytest.param(" \t\n", "\n {} \t", EMPTY_REASONING_DIGEST, id="whitespace"),
     ],
 )
 def test_format_judge_request_matches_upstream(

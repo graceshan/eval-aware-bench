@@ -1,6 +1,6 @@
 """The single-cue EvalAwareBench task for Inspect."""
 
-from inspect_ai import Task, task
+from inspect_ai import Epochs, Task, task
 from inspect_ai.dataset import MemoryDataset
 from inspect_ai.solver import generate
 from inspect_evals_utils.metadata import load_eval_version
@@ -30,5 +30,7 @@ def eval_aware_bench(
         dataset=MemoryDataset(samples),
         solver=generate(),
         scorer=eval_awareness(),
+        # Keep each repeat separate so means and coverage count individual judgments.
+        epochs=Epochs(1, reducer=[]),
         version=EVAL_VERSION,
     )

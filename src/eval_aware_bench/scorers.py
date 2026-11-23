@@ -45,23 +45,23 @@ def eval_awareness() -> Scorer:
         judge_output = await grader.generate(messages)
 
         raw = judge_output.completion
-        reasoning_available = response.reasoning is not None
+        reasoning_metadata = {
+            "reasoning_available": response.reasoning is not None,
+            "reasoning_status": response.reasoning_status,
+        }
         try:
             verdict = parse_judge_verdict(raw)
         except VerdictParseError as exc:
             return Score.unscored(
                 reason="grader_failed",
                 explanation=raw,
-                metadata={"parse_error": str(exc), "reasoning_available": reasoning_available},
+                metadata={**reasoning_metadata, "parse_error": str(exc)},
             )
 
         return Score(
             value=verdict_values(verdict, state.metadata["valence"]),
             explanation=raw,
-            metadata={
-                "judge_verdict": verdict.model_dump(),
-                "reasoning_available": reasoning_available,
-            },
+            metadata={**reasoning_metadata, "judge_verdict": verdict.model_dump()},
         )
 
     return score

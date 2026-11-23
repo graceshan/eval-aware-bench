@@ -4,7 +4,7 @@ description: |
 group: Scheming
 contributors:
   - graceshan
-version: "3-B"
+version: "4-B"
 tasks:
   - name: eval_aware_bench
     dataset_samples: 1800

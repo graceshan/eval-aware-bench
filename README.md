@@ -1,6 +1,6 @@
 # eval-aware-bench
 
-The registered Inspect task runs the full single-cue benchmark by default. One epoch covers 1,800 distinct samples from 100 task pairs, both valences, and nine conditions. The Purple Rain smoke test is available as an explicit four-sample configuration. [Dataset selections](src/eval_aware_bench/README.md#dataset)
+The registered Inspect task runs the full single-cue benchmark by default. One epoch covers 1,800 distinct samples from 100 task pairs, both valences, and nine conditions. The Purple Rain smoke test is available as an explicit four-sample configuration. Full three-epoch recipes are available for OpenRouter GPT-OSS-120B, native GPT-5 and native Claude Sonnet 4.5. [Dataset selections](src/eval_aware_bench/README.md#dataset) · [Replication run configurations](src/eval_aware_bench/README.md#replication-run-configurations)
 
 ## Getting started
 
